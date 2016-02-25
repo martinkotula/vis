@@ -1,3 +1,6 @@
+//browserify allatus.js -t babelify -o dist\vis-allatus.js -s vis
+//uglifyjs dist\vis-allatus.js -o vis-allatus.min.js
+
 // utils
 exports.util = require('./lib/util');
 exports.DOMutil = require('./lib/DOMutil');
