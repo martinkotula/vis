@@ -1,4 +1,7 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.vis = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+//browserify allatus.js -t babelify -o dist\vis-allatus.js -s vis
+//uglifyjs dist\vis-allatus.js -o vis-allatus.min.js
+
 // utils
 'use strict';
 
@@ -11946,6 +11949,9 @@ var Edge = (function () {
       if (this.options.arrows.to.enabled === true) {
         this.edgeType.drawArrowHead(ctx, 'to', viaNode, this.selected, this.hover);
       }
+      if (this.options.arrowFrom && this.options.arrowFrom.crowsFeet === true) {
+        this.edgeType.drawCrowsFeet(ctx, 'from', viaNode, this.selected, this.hover);
+      }
     }
   }, {
     key: 'drawLabel',
@@ -12077,7 +12083,8 @@ var Edge = (function () {
       var allowDeletion = arguments.length <= 2 || arguments[2] === undefined ? false : arguments[2];
       var globalOptions = arguments.length <= 3 || arguments[3] === undefined ? {} : arguments[3];
 
-      var fields = ['id', 'from', 'hidden', 'hoverWidth', 'label', 'labelHighlightBold', 'length', 'line', 'opacity', 'physics', 'scaling', 'selectionWidth', 'selfReferenceSize', 'to', 'title', 'value', 'width'];
+      var fields = ['id', 'from', 'hidden', 'hoverWidth', 'label', 'labelHighlightBold', 'length', 'line', 'opacity', 'physics', 'scaling', 'selectionWidth', 'selfReferenceSize', 'to', 'title', 'value', 'width', 'arrowFrom', //Allatus - Data Model diagram
+      'arrowTo'];
 
       // only deep extend the items in the field array. These do not have shorthand.
       util.selectiveDeepExtend(fields, parentOptions, newOptions, allowDeletion);
@@ -12351,7 +12358,11 @@ var NavigationHandler = (function () {
     value: function _fit() {
       if (new Date().valueOf() - this.touchTime > 700) {
         // TODO: fix ugly hack to avoid hammer's double fireing of event (because we use release?)
-        this.body.emitter.emit("fit", { duration: 700 });
+        if (this.options.onZoomExtends) {
+          this.options.onZoomExtends.apply(this, null);
+        } else {
+          this.body.emitter.emit("fit", { duration: 700 });
+        }
         this.touchTime = new Date().valueOf();
       }
     }
@@ -12395,14 +12406,22 @@ var NavigationHandler = (function () {
   }, {
     key: '_zoomIn',
     value: function _zoomIn() {
-      this.body.view.scale *= 1 + this.options.keyboard.speed.zoom;
-      this.body.emitter.emit('zoom', { direction: '+', scale: this.body.view.scale });
+      if (this.options.onZoomIn) {
+        this.options.onZoomIn.apply(this, [{ scale: this.body.view.scale * (1 + this.options.keyboard.speed.zoom) }]);
+      } else {
+        this.body.view.scale *= 1 + this.options.keyboard.speed.zoom;
+        this.body.emitter.emit('zoom', { direction: '+', scale: this.body.view.scale });
+      }
     }
   }, {
     key: '_zoomOut',
     value: function _zoomOut() {
-      this.body.view.scale /= 1 + this.options.keyboard.speed.zoom;
-      this.body.emitter.emit('zoom', { direction: '-', scale: this.body.view.scale });
+      if (this.options.onZoomOut) {
+        this.options.onZoomOut.apply(this, [{ scale: this.body.view.scale / (1 + this.options.keyboard.speed.zoom) }]);
+      } else {
+        this.body.view.scale /= 1 + this.options.keyboard.speed.zoom;
+        this.body.emitter.emit('zoom', { direction: '-', scale: this.body.view.scale });
+      }
     }
 
     /**
@@ -14993,6 +15012,50 @@ var EdgeBase = (function () {
         // draw shadow if enabled
         this.enableShadow(ctx);
         ctx.fill();
+
+        // disable shadows for other elements.
+        this.disableShadow(ctx);
+        ctx.stroke();
+      }
+    }
+  }, {
+    key: 'drawCrowsFeet',
+    value: function drawCrowsFeet(ctx, position, viaNode, selected, hover) {
+      // set style
+      ctx.strokeStyle = this.getColor(ctx, selected, hover);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = this.getLineWidth(selected, hover);
+
+      // set lets
+      var angle = undefined;
+      var length = undefined;
+      var arrowPos = undefined;
+      var node1 = this.to;
+      var node2 = this.from;
+      var scaleFactor = this.options.arrows.middle.scaleFactor;
+
+      if (position === 'from') {
+        node1 = this.to;
+        node2 = this.from;
+        scaleFactor = this.options.arrows.from.scaleFactor;
+      } else if (position === 'to') {
+        node1 = this.from;
+        node2 = this.to;
+        scaleFactor = this.options.arrows.to.scaleFactor;
+      }
+
+      // if not connected to itself
+      if (node1 != node2) {
+        // draw arrow head
+        angle = Math.atan2(node1.y - node2.y, node1.x - node2.x);
+        arrowPos = this.getPoint(0.2, viaNode);
+
+        // draw arrow at the end of the line
+        length = (10 + 5 * this.options.width) * scaleFactor;
+        ctx.crowsFeet(arrowPos.x, arrowPos.y, angle, length);
+
+        // draw shadow if enabled
+        this.enableShadow(ctx);
 
         // disable shadows for other elements.
         this.disableShadow(ctx);
@@ -18916,6 +18979,9 @@ var allOptions = {
     },
     multiselect: { boolean: boolean },
     navigationButtons: { boolean: boolean },
+    onZoomIn: { 'function': 'function' },
+    onZoomOut: { 'function': 'function' },
+    onZoomExtends: { 'function': 'function' },
     selectable: { boolean: boolean },
     selectConnectedEdges: { boolean: boolean },
     hoverConnectedEdges: { boolean: boolean },
@@ -19548,6 +19614,30 @@ if (typeof CanvasRenderingContext2D !== 'undefined') {
     this.moveTo(x, y);
     this.lineTo(xl, yl);
     this.lineTo(xi, yi);
+    this.lineTo(xr, yr);
+    this.closePath();
+  };
+
+  /**
+   * Draw crows feet (no line)
+   */
+  CanvasRenderingContext2D.prototype.crowsFeet = function (x, y, angle, length) {
+    // tail
+    var xt = x - length * Math.cos(angle);
+    var yt = y - length * Math.sin(angle);
+
+    // left
+    var xl = xt + length / 3 * Math.cos(angle + 0.5 * Math.PI);
+    var yl = yt + length / 3 * Math.sin(angle + 0.5 * Math.PI);
+
+    // right
+    var xr = xt + length / 3 * Math.cos(angle - 0.5 * Math.PI);
+    var yr = yt + length / 3 * Math.sin(angle - 0.5 * Math.PI);
+
+    this.beginPath();
+    this.moveTo(x, y);
+    this.lineTo(xl, yl);
+    this.moveTo(x, y);
     this.lineTo(xr, yr);
     this.closePath();
   };
